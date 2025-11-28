@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<link rel="manifest" href="./manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📊 ระบบตอบคำถามนักศึกษา</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+
+<style>
+body{font-family:'Sarabun',sans-serif;background:linear-gradient(135deg,#93c5fd,#c7d2fe);margin:0;padding:0;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;color:#1e293b;}
+.container{background:white;border-radius:20px;box-shadow:0 4px 20px rgba(0,0,0,0.1);padding:25px;width:95%;max-width:900px;text-align:center;margin-top:20px;}
+h1{color:#2563eb;margin-bottom:15px;}
+.hidden{display:none;}
+button{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-weight:bold;color:white;margin:5px;transition:0.2s;}
+button:hover{opacity:0.9;}
+.btn-primary{background:#2563eb;}
+.btn-green{background:#10b981;}
+.btn-purple{background:#8b5cf6;}
+.btn-gray{background:#6b7280;}
+.btn-red{background:#ef4444;}
+input{padding:10px;width:200px;border:2px solid #cbd5e1;border-radius:8px;text-align:center;}
+.choices button{width:60px;height:60px;font-size:1.3rem;background:white;color:#1e293b;border:2px solid #cbd5e1;border-radius:50%;transition:0.2s;}
+.choices button.selected{background:#2563eb;color:white;transform:scale(1.05);}
+#popup{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%) scale(0.8);background:#10b981;color:white;padding:15px 25px;border-radius:12px;opacity:0;transition:all 0.4s ease; z-index:1000;}
+#popup.show{opacity:1;transform:translate(-50%,-50%) scale(1);}
+.responses-list{margin-top:15px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;max-height:350px;overflow-y:auto;text-align:left;}
+.response-item{padding:8px 12px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;}
+.round-block{margin-bottom:20px;border:1px solid #e2e8f0;padding:8px;border-radius:10px;background:#f1f5f9;}
+.chart-block{margin:15px 0;}
+@media(max-width:600px){.choices button{width:50px;height:50px;} input{width:150px;}}
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- Home -->
+  <div id="homePage">
+    <h1>📘 ระบบตอบคำถาม Realtime</h1>
+    <button class="btn-green" id="toStudent">🎓 นักศึกษา</button>
+    <button class="btn-purple" id="toTeacher">👩‍🏫 อาจารย์</button>
+  </div>
+
+  <!-- Student -->
+  <div id="studentPage" class="hidden">
+    <h1>🎓 นักศึกษา</h1>
+    <p>รหัสนักศึกษา</p>
+    <input type="number" id="student_id">
+    <h3>เลือกคำตอบ</h3>
+    <div class="choices">
+      <button data-choice="A">A</button>
+      <button data-choice="B">B</button>
+      <button data-choice="C">C</button>
+      <button data-choice="D">D</button>
+      <button data-choice="E">E</button>
+    </div>
+    <br>
+    <button class="btn-green" id="submitBtn">ส่งคำตอบ</button>
+    <button class="btn-gray" id="resetBtn">ตอบใหม่</button>
+    <br><br>
+    <button class="btn-primary" id="backHome1">🏠 กลับหน้าหลัก</button>
+    <p id="status"></p>
+  </div>
+
+  <!-- Teacher -->
+  <div id="teacherPage" class="hidden">
+    <h1>👩‍🏫 อาจารย์</h1>
+    <button class="btn-red" id="clearScreenBtn">🧼 เริ่มรอบใหม่</button>
+    <button class="btn-green" id="exportExcelBtn">📥 Export Excel</button>
+    <div id="chartsContainer"></div>
+    <div id="responsesList" class="responses-list"></div>
+    <br>
+    <button class="btn-primary" id="backHome2">🏠 กลับหน้าหลัก</button>
+  </div>
+</div>
+
+<div id="popup">บันทึกสำเร็จ</div>
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+const SUPABASE_URL = "https://ebqmunvfantlffbqvybx.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVicW11bnZmYW50bGZmYnF2eWJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5MTU5NTcsImV4cCI6MjA3ODQ5MTk1N30.wg4AkJTrhCYqwM9YbG8SvAuB7HNOpNmbYJTU_2RBASo";
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Pages
+const homePage = document.getElementById("homePage");
+const studentPage = document.getElementById("studentPage");
+const teacherPage = document.getElementById("teacherPage");
+const chartsContainer = document.getElementById("chartsContainer");
+const responsesList = document.getElementById("responsesList");
+
+document.getElementById("toStudent").onclick = ()=>{homePage.classList.add("hidden"); studentPage.classList.remove("hidden");};
+document.getElementById("toTeacher").onclick = ()=>{
+  const pw = prompt("รหัสผ่านอาจารย์");
+  if(pw==="2568"){homePage.classList.add("hidden"); teacherPage.classList.remove("hidden");}
+  else if(pw!==null) alert("รหัสผ่านไม่ถูกต้อง");
+};
+document.getElementById("backHome1").onclick = ()=>{studentPage.classList.add("hidden"); homePage.classList.remove("hidden");};
+document.getElementById("backHome2").onclick = ()=>{teacherPage.classList.add("hidden"); homePage.classList.remove("hidden");};
+
+// Popup
+function showPopup(msg){ const p=document.getElementById("popup"); p.textContent=msg; p.classList.add("show"); setTimeout(()=>p.classList.remove("show"),2000); }
+
+// Student choice
+let selectedChoice = null;
+document.querySelectorAll(".choices button").forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll(".choices button").forEach(b=>b.classList.remove("selected"));
+    btn.classList.add("selected");
+    selectedChoice = btn.dataset.choice;
+  };
+});
+
+// Current round & question
+let currentRound = 1;   // รอบเริ่มต้น
+let questionNumber = 1;  // ข้อ = รอบ
+
+// Student submit
+document.getElementById("submitBtn").onclick = async ()=>{
+  const student_id = document.getElementById("student_id").value.trim();
+  if(!student_id || !selectedChoice) return alert("กรุณากรอกข้อมูลให้ครบ");
+
+  const { data: existing } = await supabase.from("attendance")
+    .select("*")
+    .eq("student_id", student_id)
+    .eq("round_id", currentRound)
+    .eq("question_number", questionNumber);
+
+  if(existing.length > 0) return alert("❌ คุณได้ส่งคำตอบข้อนี้แล้ว");
+
+  await supabase.from("attendance").insert([{
+    student_id,
+    round_id: currentRound,
+    question_number: questionNumber,
+    choice: selectedChoice,
+    created_at: new Date().toISOString()
+  }]);
+  
+  showPopup(`✅ ส่งคำตอบข้อ ${questionNumber} แล้ว`);
+  document.getElementById("status").textContent=`ส่ง ${selectedChoice} แล้ว`;
+  questionNumber++;
+  loadAll();
+};
+
+// Reset
+document.getElementById("resetBtn").onclick = ()=>{
+  document.getElementById("student_id").value="";
+  document.querySelectorAll(".choices button").forEach(b=>b.classList.remove("selected"));
+  selectedChoice = null;
+  document.getElementById("status").textContent = "";
+};
+
+// Load all responses & charts
+async function loadAll(){
+  const { data } = await supabase.from("attendance").select("*").order("round_id",{ascending:true}).order("created_at",{ascending:true});
+  const rounds = {};
+  data.forEach(r=>{
+    if(!rounds[r.round_id]) rounds[r.round_id]=[];
+    rounds[r.round_id].push(r);
+  });
+
+  // Responses list
+  let html = "";
+  Object.keys(rounds).sort((a,b)=>b-a).forEach(round=>{
+    const qnum = round; // ใช้เลข round เป็นเลขข้อ
+    html += `<div class="round-block" data-round="${round}"><h3 style="color:#2563eb;">ข้อที่ ${qnum}</h3>`;
+    rounds[round].forEach(r=>{
+      html += `<div class="response-item"><span>👩‍🎓 ${r.student_id}</span><b>${r.choice}</b><span>${new Date(r.created_at).toLocaleTimeString()}</span></div>`;
+    });
+    html += `</div><br>`;
+  });
+  responsesList.innerHTML = html;
+
+  // Charts per round
+  chartsContainer.innerHTML = "";
+  Object.keys(rounds).sort((a,b)=>b-a).forEach(round=>{
+    const counts={A:0,B:0,C:0,D:0,E:0};
+    rounds[round].forEach(r=>{if(counts[r.choice]!==undefined) counts[r.choice]++;});
+    const div=document.createElement("div");
+    div.className="chart-block";
+    div.innerHTML=`<h4>ข้อที่ ${round}</h4><canvas id="chart_${round}" height="250"></canvas>`;
+    chartsContainer.appendChild(div);
+    new Chart(document.getElementById(`chart_${round}`).getContext("2d"),{
+      type:"pie",
+      data:{
+        labels:["A","B","C","D","E"],
+        datasets:[{label:`ข้อที่ ${round}`,data:[counts.A,counts.B,counts.C,counts.D,counts.E],backgroundColor:["#f87171","#fbbf24","#34d399","#60a5fa","#a78bfa"]}]
+      },
+      options:{plugins:{datalabels:{color:"#fff",font:{weight:"bold",size:14},formatter:(v)=>v},legend:{position:'bottom'}}}
+    });
+  });
+}
+
+// Realtime Supabase
+supabase.channel("public:attendance")
+  .on("postgres_changes",{event:"INSERT",schema:"public",table:"attendance"},payload=>{
+    loadAll();
+  })
+  .subscribe();
+
+// BroadcastChannel - sync new round
+const bc = new BroadcastChannel('round_channel');
+bc.onmessage = (e)=>{
+  if(e.data.type==='newRound'){
+    currentRound = e.data.round;
+    questionNumber = currentRound; // ข้อ = รอบ
+    selectedChoice = null;
+    document.getElementById("student_id").value="";
+    document.querySelectorAll(".choices button").forEach(b=>b.classList.remove("selected"));
+    document.getElementById("status").textContent="";
+    loadAll();
+    showPopup("🧼 รอบใหม่เริ่มแล้ว");
+  }
+};
+
+// Teacher starts new round
+document.getElementById("clearScreenBtn").onclick = ()=>{
+  currentRound++;
+  questionNumber = currentRound; // ข้อ = รอบ
+  bc.postMessage({type:'newRound',round:currentRound});
+};
+
+// Export Excel
+document.getElementById("exportExcelBtn").onclick = async ()=>{
+  const { data } = await supabase.from("attendance").select("*").order("created_at",{ascending:true});
+  if(!data || data.length===0){ alert("ไม่มีข้อมูล"); return; }
+
+  const rounds={};
+  data.forEach(r=>{
+    if(!rounds[r.round_id]) rounds[r.round_id]={};
+    if(!rounds[r.round_id][r.question_number]) rounds[r.round_id][r.question_number]=[];
+    rounds[r.round_id][r.question_number].push(r);
+  });
+
+  const wb = XLSX.utils.book_new();
+  // Summary
+  const allCounts={A:0,B:0,C:0,D:0,E:0};
+  data.forEach(r=>{if(allCounts[r.choice]!==undefined) allCounts[r.choice]++;});
+  const totalAll=data.length;
+  const summaryData=Object.keys(allCounts).map(c=>({Choice:c,Count:allCounts[c],Percent:totalAll?((allCounts[c]/totalAll)*100).toFixed(1)+"%":"0%"}));
+  const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
+
+  Object.keys(rounds).sort((a,b)=>b-a).forEach(roundId=>{
+    const roundData = rounds[roundId];
+    Object.keys(roundData).sort((a,b)=>a-b).forEach(qnum=>{
+      const formatted = roundData[qnum].map(r=>({StudentID:r.student_id,Choice:r.choice,Round:r.round_id,Question:r.question_number,Date:new Date(r.created_at).toLocaleString()}));
+      const ws = XLSX.utils.json_to_sheet(formatted);
+      XLSX.utils.book_append_sheet(wb, ws, `R${roundId}_Q${qnum}`.substring(0,31));
+    });
+  });
+  XLSX.writeFile(wb,"attendance_all.xlsx");
+};
+
+// Initial load
+loadAll();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js")
+    .then(() => console.log("SW Registered"))
+    .catch(err => console.error("SW failed:", err));
+}
+</script>
+
+</body>
+</html>
